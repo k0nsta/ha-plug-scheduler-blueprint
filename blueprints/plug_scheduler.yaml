@@ -1,0 +1,127 @@
+blueprint:
+  name: Smart plug scheduler — on/off + auto-off
+  description: >
+    Schedule a switch/plug to turn **ON** at a chosen time — with *separate weekday
+    and weekend* times — and turn it **OFF** either a fixed duration after it switches
+    on (also catches a manual turn-on, handy as a coffee-machine safety) or at a fixed
+    clock time.
+
+    Everything is configurable from the UI: the switch, both ON times (each can be
+    enabled/disabled), the off mode, the auto-off duration, and the fixed OFF time.
+  domain: automation
+  source_url: https://github.com/k0nsta/ha-plug-scheduler-blueprint/blob/master/blueprints/plug_scheduler.yaml
+  input:
+    sec_target:
+      name: 1 · Plug / switch
+      icon: mdi:power-socket-eu
+      input:
+        target_switch:
+          name: Switch to control
+          description: The plug/switch entity to schedule.
+          selector:
+            entity:
+              filter: { domain: switch }
+
+    sec_schedule:
+      name: 2 · Turn-ON schedule
+      icon: mdi:clock-time-nine
+      input:
+        weekday_enable:
+          name: Enable weekday schedule (Mon–Fri)
+          default: true
+          selector: { boolean: {} }
+        weekday_on_time:
+          name: Weekday ON time
+          default: "09:00:00"
+          selector: { time: {} }
+        weekend_enable:
+          name: Enable weekend schedule (Sat–Sun)
+          default: true
+          selector: { boolean: {} }
+        weekend_on_time:
+          name: Weekend ON time
+          default: "10:30:00"
+          selector: { time: {} }
+
+    sec_off:
+      name: 3 · Turn-OFF behaviour
+      icon: mdi:power-plug-off
+      input:
+        off_mode:
+          name: Off mode
+          description: >
+            **After a duration** turns the plug off a set time after it switches on
+            (covers a manual turn-on too). **At a fixed time** turns it off at a clock
+            time regardless of when it went on.
+          default: duration
+          selector:
+            select:
+              options:
+                - { label: "Auto-off after a duration", value: duration }
+                - { label: "Off at a fixed time", value: fixed_time }
+        on_duration:
+          name: Auto-off after (duration mode)
+          description: How long the plug stays on after it switches on.
+          default: { hours: 1, minutes: 0, seconds: 0 }
+          selector: { duration: {} }
+        off_time:
+          name: OFF time (fixed-time mode)
+          default: "08:00:00"
+          selector: { time: {} }
+
+mode: queued
+max: 5
+max_exceeded: silent
+
+triggers:
+  - trigger: time
+    at: !input weekday_on_time
+    id: wd_on
+  - trigger: time
+    at: !input weekend_on_time
+    id: we_on
+  - trigger: time
+    at: !input off_time
+    id: sched_off
+  - trigger: state
+    entity_id: !input target_switch
+    to: "on"
+    for: !input on_duration
+    id: dur_off
+
+variables:
+  weekday_enable: !input weekday_enable
+  weekend_enable: !input weekend_enable
+  off_mode: !input off_mode
+
+action:
+  - choose:
+      # ── ON · weekdays (Mon–Fri) ──
+      - conditions:
+          - "{{ trigger.id == 'wd_on' and weekday_enable }}"
+          - condition: time
+            weekday: [mon, tue, wed, thu, fri]
+        sequence:
+          - action: switch.turn_on
+            target: { entity_id: !input target_switch }
+      # ── ON · weekends (Sat–Sun) ──
+      - conditions:
+          - "{{ trigger.id == 'we_on' and weekend_enable }}"
+          - condition: time
+            weekday: [sat, sun]
+        sequence:
+          - action: switch.turn_on
+            target: { entity_id: !input target_switch }
+      # ── OFF · after duration (also catches manual on) ──
+      - conditions:
+          - "{{ trigger.id == 'dur_off' and off_mode == 'duration' }}"
+        sequence:
+          - action: switch.turn_off
+            target: { entity_id: !input target_switch }
+      # ── OFF · fixed clock time ──
+      - conditions:
+          - "{{ trigger.id == 'sched_off' and off_mode == 'fixed_time' }}"
+        sequence:
+          - action: switch.turn_off
+            target: { entity_id: !input target_switch }
+    default: []
