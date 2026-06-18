@@ -48,6 +48,11 @@ blueprint:
           name: OFF at
           default: "09:30:00"
           selector: { time: {} }
+
+    sec_off_delay:
+      name: Off delay
+      icon: mdi:timer-off-outline
+      input:
         off_delay_enable:
           name: Enable off delay (auto-off after it turns on)
           default: true
