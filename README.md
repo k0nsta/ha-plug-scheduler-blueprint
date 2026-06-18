@@ -1,4 +1,4 @@
-# Smart plug scheduler — on/off + off delay
+# IKEA GRILLPLATS - smart plug schedule
 
 A Home Assistant blueprint to schedule any `switch`/plug, modelled on a typical
 "Set Schedules" editor: an independent **ON** time and **OFF** time (each toggled on/off

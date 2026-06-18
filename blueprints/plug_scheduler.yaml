@@ -1,5 +1,5 @@
 blueprint:
-  name: Smart plug scheduler — on/off + off delay
+  name: IKEA GRILLPLATS - smart plug schedule
   description: >
     Schedule a switch/plug with an independent **ON** time and **OFF** time (each
     toggled on/off separately), restricted to chosen **days of week**, plus an optional
