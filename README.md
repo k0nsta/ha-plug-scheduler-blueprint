@@ -1,13 +1,14 @@
-# Smart plug scheduler — on/off + auto-off
+# Smart plug scheduler — on/off + off delay
 
-A Home Assistant blueprint to schedule any `switch`/plug **ON** at a time of day — with
-**separate weekday and weekend** times — and turn it **OFF** either:
+A Home Assistant blueprint to schedule any `switch`/plug, modelled on a typical
+"Set Schedules" editor: an independent **ON** time and **OFF** time (each toggled on/off
+separately), a **days-of-week** picker, **Repeat weekly**, and an optional **off delay**
+(auto-off a set time after it turns on — also catches a *manual* turn-on, handy as a
+coffee-machine / iron / heater safety).
 
-- a fixed **duration** after it switches on (also catches a *manual* turn-on — handy as a
-  coffee-machine / iron / heater safety auto-off), or
-- at a fixed **clock time**.
-
-Everything is configurable from the UI — no YAML editing once imported.
+**One automation = one schedule.** Create several from this blueprint for different
+patterns (e.g. one for weekdays, one for weekends). Everything is configurable from the
+UI — no YAML editing once imported.
 
 ## Import
 
@@ -24,18 +25,17 @@ https://github.com/k0nsta/ha-plug-scheduler-blueprint/blob/master/blueprints/plu
 | Input | What it does |
 |---|---|
 | **Switch to control** | The plug/switch entity to schedule. |
-| **Weekday schedule** | Enable + ON time for Mon–Fri. |
-| **Weekend schedule** | Enable + ON time for Sat–Sun. |
-| **Off mode** | `Auto-off after a duration` *or* `Off at a fixed time`. |
-| **Auto-off after** | Duration the plug stays on after switching on (duration mode). |
-| **OFF time** | Fixed clock time to turn off (fixed-time mode). |
+| **Enable ON time** + **ON at** | Turn the plug on at this time (on the chosen days). |
+| **Enable OFF time** + **OFF at** | Turn the plug off at this time (on the chosen days). |
+| **Enable off delay** + **Off delay** | Turn off this long after the plug switches on — fires for scheduled *and manual* turn-ons. |
+| **Days of week** | Which days the ON/OFF times run. |
+| **Repeat weekly** | On = recurring; Off = run once, then the schedule disables itself after the next off. |
 
 ### Notes
 
-- The **duration** off mode triggers on *any* turn-on (scheduled or manual), so it doubles as a
-  safety auto-off. Set the weekday/weekend times equal if you want the same time every day, or
-  disable a group to schedule only weekdays or only weekends.
-- The OFF action is never gated by day — turning the plug **off** is always allowed.
+- Mix freely: ON-only + off-delay (auto-off timer), ON + OFF times (fixed window), or all three.
+- The **off delay** is never gated by day — turning the plug **off** is always allowed (safety).
+- For different weekday/weekend times, create two schedules (one Mon–Fri, one Sat–Sun).
 
 ## License
 

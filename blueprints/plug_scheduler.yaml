@@ -1,18 +1,19 @@
 blueprint:
-  name: Smart plug scheduler — on/off + auto-off
+  name: Smart plug scheduler — on/off + off delay
   description: >
-    Schedule a switch/plug to turn **ON** at a chosen time — with *separate weekday
-    and weekend* times — and turn it **OFF** either a fixed duration after it switches
-    on (also catches a manual turn-on, handy as a coffee-machine safety) or at a fixed
-    clock time.
+    Schedule a switch/plug with an independent **ON** time and **OFF** time (each
+    toggled on/off separately), restricted to chosen **days of week**, plus an optional
+    **off delay** (auto-off a set time after it turns on — also catches a *manual*
+    turn-on, handy as a coffee-machine safety).
 
-    Everything is configurable from the UI: the switch, both ON times (each can be
-    enabled/disabled), the off mode, the auto-off duration, and the fixed OFF time.
+    One automation = one schedule. Create several from this blueprint for different
+    patterns (e.g. one for weekdays, one for weekends). Everything is configurable
+    from the UI.
   domain: automation
   source_url: https://github.com/k0nsta/ha-plug-scheduler-blueprint/blob/master/blueprints/plug_scheduler.yaml
   input:
     sec_target:
-      name: 1 · Plug / switch
+      name: Plug / switch
       icon: mdi:power-socket-eu
       input:
         target_switch:
@@ -22,52 +23,68 @@ blueprint:
             entity:
               filter: { domain: switch }
 
-    sec_schedule:
-      name: 2 · Turn-ON schedule
-      icon: mdi:clock-time-nine
+    sec_on:
+      name: Turn ON
+      icon: mdi:power-plug
       input:
-        weekday_enable:
-          name: Enable weekday schedule (Mon–Fri)
+        on_enable:
+          name: Enable ON time
           default: true
           selector: { boolean: {} }
-        weekday_on_time:
-          name: Weekday ON time
+        on_time:
+          name: ON at
           default: "09:00:00"
-          selector: { time: {} }
-        weekend_enable:
-          name: Enable weekend schedule (Sat–Sun)
-          default: true
-          selector: { boolean: {} }
-        weekend_on_time:
-          name: Weekend ON time
-          default: "10:30:00"
           selector: { time: {} }
 
     sec_off:
-      name: 3 · Turn-OFF behaviour
+      name: Turn OFF
       icon: mdi:power-plug-off
       input:
-        off_mode:
-          name: Off mode
-          description: >
-            **After a duration** turns the plug off a set time after it switches on
-            (covers a manual turn-on too). **At a fixed time** turns it off at a clock
-            time regardless of when it went on.
-          default: duration
-          selector:
-            select:
-              options:
-                - { label: "Auto-off after a duration", value: duration }
-                - { label: "Off at a fixed time", value: fixed_time }
-        on_duration:
-          name: Auto-off after (duration mode)
-          description: How long the plug stays on after it switches on.
+        off_enable:
+          name: Enable OFF time
+          default: false
+          selector: { boolean: {} }
+        off_time:
+          name: OFF at
+          default: "09:30:00"
+          selector: { time: {} }
+        off_delay_enable:
+          name: Enable off delay (auto-off after it turns on)
+          default: true
+          selector: { boolean: {} }
+        off_delay:
+          name: Off delay
+          description: Turn off this long after the plug switches on (covers a manual turn-on too).
           default: { hours: 1, minutes: 0, seconds: 0 }
           selector: { duration: {} }
-        off_time:
-          name: OFF time (fixed-time mode)
-          default: "08:00:00"
-          selector: { time: {} }
+
+    sec_days:
+      name: Days & repeat
+      icon: mdi:calendar-week
+      input:
+        days:
+          name: Days of week
+          description: The ON/OFF times only run on these days. (Off delay always runs, for safety.)
+          default: [mon, tue, wed, thu, fri, sat, sun]
+          selector:
+            select:
+              multiple: true
+              mode: list
+              options:
+                - { label: Monday, value: mon }
+                - { label: Tuesday, value: tue }
+                - { label: Wednesday, value: wed }
+                - { label: Thursday, value: thu }
+                - { label: Friday, value: fri }
+                - { label: Saturday, value: sat }
+                - { label: Sunday, value: sun }
+        repeat_weekly:
+          name: Repeat weekly
+          description: >
+            Keep running every week on the chosen days. Turn OFF to run once — the
+            schedule disables itself after the next OFF (or off-delay) fires.
+          default: true
+          selector: { boolean: {} }
 
 mode: queued
 max: 5
@@ -75,53 +92,53 @@ max_exceeded: silent
 
 triggers:
   - trigger: time
-    at: !input weekday_on_time
-    id: wd_on
-  - trigger: time
-    at: !input weekend_on_time
-    id: we_on
+    at: !input on_time
+    id: sched_on
   - trigger: time
     at: !input off_time
     id: sched_off
   - trigger: state
     entity_id: !input target_switch
     to: "on"
-    for: !input on_duration
-    id: dur_off
+    for: !input off_delay
+    id: delay_off
 
 variables:
-  weekday_enable: !input weekday_enable
-  weekend_enable: !input weekend_enable
-  off_mode: !input off_mode
+  on_enable: !input on_enable
+  off_enable: !input off_enable
+  off_delay_enable: !input off_delay_enable
+  repeat_weekly: !input repeat_weekly
 
 action:
   - choose:
-      # ── ON · weekdays (Mon–Fri) ──
+      # ── ON at scheduled time (chosen days) ──
       - conditions:
-          - "{{ trigger.id == 'wd_on' and weekday_enable }}"
+          - "{{ trigger.id == 'sched_on' and on_enable }}"
           - condition: time
-            weekday: [mon, tue, wed, thu, fri]
+            weekday: !input days
         sequence:
           - action: switch.turn_on
             target: { entity_id: !input target_switch }
-      # ── ON · weekends (Sat–Sun) ──
+      # ── OFF at scheduled time (chosen days) ──
       - conditions:
-          - "{{ trigger.id == 'we_on' and weekend_enable }}"
+          - "{{ trigger.id == 'sched_off' and off_enable }}"
           - condition: time
-            weekday: [sat, sun]
-        sequence:
-          - action: switch.turn_on
-            target: { entity_id: !input target_switch }
-      # ── OFF · after duration (also catches manual on) ──
-      - conditions:
-          - "{{ trigger.id == 'dur_off' and off_mode == 'duration' }}"
+            weekday: !input days
         sequence:
           - action: switch.turn_off
             target: { entity_id: !input target_switch }
-      # ── OFF · fixed clock time ──
+          - if: "{{ not repeat_weekly }}"
+            then:
+              - action: automation.turn_off
+                target: { entity_id: "{{ this.entity_id }}" }
+      # ── OFF after delay (auto-off; also catches manual on). Not day-gated for safety. ──
       - conditions:
-          - "{{ trigger.id == 'sched_off' and off_mode == 'fixed_time' }}"
+          - "{{ trigger.id == 'delay_off' and off_delay_enable }}"
         sequence:
           - action: switch.turn_off
             target: { entity_id: !input target_switch }
+          - if: "{{ not repeat_weekly and not off_enable }}"
+            then:
+              - action: automation.turn_off
+                target: { entity_id: "{{ this.entity_id }}" }
     default: []
