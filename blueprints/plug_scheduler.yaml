@@ -1,14 +1,15 @@
 blueprint:
   name: IKEA GRILLPLATS - smart plug schedule
   description: >
-    Schedule a switch/plug with an independent **ON** time and **OFF** time (each
-    toggled on/off separately), restricted to chosen **days of week**, plus an optional
-    **off delay** (auto-off a set time after it turns on — also catches a *manual*
-    turn-on, handy as a coffee-machine safety).
+    Helper-driven plug scheduler. Turns a switch **ON** at a start time and **OFF** at an
+    end time (each independently enabled), only on the chosen **days of the week**, with
+    optional **repeat-weekly** (one-shot if off — it disables that enable after it fires).
 
-    One automation = one schedule. Create several from this blueprint for different
-    patterns (e.g. one for weekdays, one for weekends). Everything is configurable
-    from the UI.
+    All schedule values are read **live from helper entities** (input_datetime for the
+    times, input_boolean for the enables/repeat, input_text for the days), so a dashboard
+    can edit the schedule without touching the automation. One automation = one plug.
+
+    Days helper format: a digit string where 1=Mon … 7=Sun (e.g. "12345" = weekdays).
   domain: automation
   source_url: https://github.com/k0nsta/ha-plug-scheduler-blueprint/blob/master/blueprints/plug_scheduler.yaml
   input:
@@ -27,69 +28,54 @@ blueprint:
       name: Turn ON
       icon: mdi:power-plug
       input:
-        on_enable:
-          name: Enable ON time
-          default: true
-          selector: { boolean: {} }
-        on_time:
+        on_enable_entity:
+          name: ON enabled
+          description: input_boolean — when on, the plug switches ON at the start time.
+          selector:
+            entity:
+              filter: { domain: input_boolean }
+        on_time_entity:
           name: ON at
-          default: "09:00:00"
-          selector: { time: {} }
+          description: input_datetime (time) — the start time.
+          selector:
+            entity:
+              filter: { domain: input_datetime }
 
     sec_off:
       name: Turn OFF
       icon: mdi:power-plug-off
       input:
-        off_enable:
-          name: Enable OFF time
-          default: false
-          selector: { boolean: {} }
-        off_time:
+        off_enable_entity:
+          name: OFF enabled
+          description: input_boolean — when on, the plug switches OFF at the end time.
+          selector:
+            entity:
+              filter: { domain: input_boolean }
+        off_time_entity:
           name: OFF at
-          default: "09:30:00"
-          selector: { time: {} }
-
-    sec_off_delay:
-      name: Off delay
-      icon: mdi:timer-off-outline
-      input:
-        off_delay_enable:
-          name: Enable off delay (auto-off after it turns on)
-          default: true
-          selector: { boolean: {} }
-        off_delay:
-          name: Off delay
-          description: Turn off this long after the plug switches on (covers a manual turn-on too).
-          default: { hours: 1, minutes: 0, seconds: 0 }
-          selector: { duration: {} }
+          description: input_datetime (time) — the end time.
+          selector:
+            entity:
+              filter: { domain: input_datetime }
 
     sec_days:
       name: Days & repeat
       icon: mdi:calendar-week
       input:
-        days:
-          name: Days of week
-          description: The ON/OFF times only run on these days. (Off delay always runs, for safety.)
-          default: [mon, tue, wed, thu, fri, sat, sun]
+        days_entity:
+          name: Days
+          description: input_text holding selected days as digits (1=Mon … 7=Sun), e.g. "12345".
           selector:
-            select:
-              multiple: true
-              mode: list
-              options:
-                - { label: Monday, value: mon }
-                - { label: Tuesday, value: tue }
-                - { label: Wednesday, value: wed }
-                - { label: Thursday, value: thu }
-                - { label: Friday, value: fri }
-                - { label: Saturday, value: sat }
-                - { label: Sunday, value: sun }
-        repeat_weekly:
+            entity:
+              filter: { domain: input_text }
+        repeat_entity:
           name: Repeat weekly
           description: >
-            Keep running every week on the chosen days. Turn OFF to run once — the
-            schedule disables itself after the next OFF (or off-delay) fires.
-          default: true
-          selector: { boolean: {} }
+            input_boolean — keep running every week on the chosen days. When off, the
+            schedule runs once then disables its own enable helper.
+          selector:
+            entity:
+              filter: { domain: input_boolean }
 
 mode: queued
 max: 5
@@ -97,53 +83,42 @@ max_exceeded: silent
 
 triggers:
   - trigger: time
-    at: !input on_time
+    at: !input on_time_entity
     id: sched_on
   - trigger: time
-    at: !input off_time
+    at: !input off_time_entity
     id: sched_off
-  - trigger: state
-    entity_id: !input target_switch
-    to: "on"
-    for: !input off_delay
-    id: delay_off
 
 variables:
-  on_enable: !input on_enable
-  off_enable: !input off_enable
-  off_delay_enable: !input off_delay_enable
-  repeat_weekly: !input repeat_weekly
+  on_enable_e: !input on_enable_entity
+  off_enable_e: !input off_enable_entity
+  days_e: !input days_entity
+  repeat_e: !input repeat_entity
 
 action:
   - choose:
-      # ── ON at scheduled time (chosen days) ──
+      # ── ON at the start time (only on chosen days, if enabled) ──
       - conditions:
-          - "{{ trigger.id == 'sched_on' and on_enable }}"
-          - condition: time
-            weekday: !input days
+          - "{{ trigger.id == 'sched_on' }}"
+          - "{{ on_enable_e is string and is_state(on_enable_e, 'on') }}"
+          - "{{ days_e is string and (now().isoweekday() | string) in states(days_e) }}"
         sequence:
           - action: switch.turn_on
             target: { entity_id: !input target_switch }
-      # ── OFF at scheduled time (chosen days) ──
+          - if: "{{ repeat_e is string and is_state(repeat_e, 'off') }}"
+            then:
+              - action: input_boolean.turn_off
+                target: { entity_id: "{{ on_enable_e }}" }
+      # ── OFF at the end time (only on chosen days, if enabled) ──
       - conditions:
-          - "{{ trigger.id == 'sched_off' and off_enable }}"
-          - condition: time
-            weekday: !input days
+          - "{{ trigger.id == 'sched_off' }}"
+          - "{{ off_enable_e is string and is_state(off_enable_e, 'on') }}"
+          - "{{ days_e is string and (now().isoweekday() | string) in states(days_e) }}"
         sequence:
           - action: switch.turn_off
             target: { entity_id: !input target_switch }
-          - if: "{{ not repeat_weekly }}"
+          - if: "{{ repeat_e is string and is_state(repeat_e, 'off') }}"
             then:
-              - action: automation.turn_off
-                target: { entity_id: "{{ this.entity_id }}" }
-      # ── OFF after delay (auto-off; also catches manual on). Not day-gated for safety. ──
-      - conditions:
-          - "{{ trigger.id == 'delay_off' and off_delay_enable }}"
-        sequence:
-          - action: switch.turn_off
-            target: { entity_id: !input target_switch }
-          - if: "{{ not repeat_weekly and not off_enable }}"
-            then:
-              - action: automation.turn_off
-                target: { entity_id: "{{ this.entity_id }}" }
+              - action: input_boolean.turn_off
+                target: { entity_id: "{{ off_enable_e }}" }
     default: []
