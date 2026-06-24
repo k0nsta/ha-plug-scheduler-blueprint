@@ -1,14 +1,19 @@
 # IKEA GRILLPLATS - smart plug schedule
 
-A Home Assistant blueprint to schedule any `switch`/plug, modelled on a typical
-"Set Schedules" editor: an independent **ON** time and **OFF** time (each toggled on/off
-separately), a **days-of-week** picker, **Repeat weekly**, and an optional **off delay**
-(auto-off a set time after it turns on — also catches a *manual* turn-on, handy as a
-coffee-machine / iron / heater safety).
+A **helper-driven** Home Assistant blueprint to schedule any `switch`/plug: turn it **ON**
+at a start time and **OFF** at an end time (each independently enabled), only on chosen
+**days of the week**, with optional **Repeat weekly** (one-shot if off). Modelled on a
+typical "Set Schedules" editor.
 
-**One automation = one schedule.** Create several from this blueprint for different
-patterns (e.g. one for weekdays, one for weekends). Everything is configurable from the
-UI — no YAML editing once imported.
+Unlike a normal blueprint, the schedule values aren't set in the blueprint — they're read
+**live from helper entities** (`input_datetime` for the times, `input_boolean` for the
+enables/repeat, `input_text` for the days). That means a **dashboard can edit the schedule
+on the fly** (time pickers, day chips, toggles) without touching the automation. The `time`
+triggers point at the `input_datetime` entities, so Home Assistant re-arms automatically
+when you change a time.
+
+**One automation = one plug.** Create the helpers once per plug, then one blueprint
+automation wiring them together.
 
 ## Import
 
@@ -22,20 +27,41 @@ https://github.com/k0nsta/ha-plug-scheduler-blueprint/blob/master/blueprints/plu
 
 ## Inputs
 
-| Input | What it does |
-|---|---|
-| **Switch to control** | The plug/switch entity to schedule. |
-| **Enable ON time** + **ON at** | Turn the plug on at this time (on the chosen days). |
-| **Enable OFF time** + **OFF at** | Turn the plug off at this time (on the chosen days). |
-| **Enable off delay** + **Off delay** | Turn off this long after the plug switches on — fires for scheduled *and manual* turn-ons. |
-| **Days of week** | Which days the ON/OFF times run. |
-| **Repeat weekly** | On = recurring; Off = run once, then the schedule disables itself after the next off. |
+All schedule values are **helper entities** you create once (see below).
+
+| Input | Entity type | What it does |
+|---|---|---|
+| **Switch to control** | `switch` | The plug/switch entity to schedule. |
+| **ON enabled** | `input_boolean` | When on, the plug switches **ON** at the start time. |
+| **ON at** | `input_datetime` (time) | The start time. |
+| **OFF enabled** | `input_boolean` | When on, the plug switches **OFF** at the end time. |
+| **OFF at** | `input_datetime` (time) | The end time. |
+| **Days** | `input_text` | Selected days as a digit string, `1`=Mon … `7`=Sun (e.g. `"12345"` = weekdays). |
+| **Repeat weekly** | `input_boolean` | On = recurring on the chosen days; Off = run once, then it disables that enable after firing. |
+
+### Helpers
+
+Create these per plug (Settings → Devices & Services → Helpers), e.g. for a `coffee` plug:
+
+```yaml
+input_datetime:
+  plug_coffee_start: { has_date: false, has_time: true }
+  plug_coffee_end:   { has_date: false, has_time: true }
+input_boolean:
+  plug_coffee_start_en: {}
+  plug_coffee_end_en:   {}
+  plug_coffee_repeat:   {}
+input_text:
+  plug_coffee_days: { initial: "12345" }   # 1=Mon .. 7=Sun
+```
 
 ### Notes
 
-- Mix freely: ON-only + off-delay (auto-off timer), ON + OFF times (fixed window), or all three.
-- The **off delay** is never gated by day — turning the plug **off** is always allowed (safety).
-- For different weekday/weekend times, create two schedules (one Mon–Fri, one Sat–Sun).
+- ON and OFF are independent — enable either or both (ON-only, OFF-only, or a fixed window).
+- ON/OFF only fire on the selected days; the day string uses ISO weekday digits (1=Mon … 7=Sun).
+- Editing any helper takes effect immediately — the `time` triggers re-arm on change.
+- For different weekday/weekend behaviour, point a second automation at a second set of helpers
+  (or just include/exclude days in the one schedule).
 
 ## License
 
